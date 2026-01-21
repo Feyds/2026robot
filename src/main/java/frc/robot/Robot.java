@@ -6,8 +6,14 @@ package frc.robot;
 
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.math.filter.SlewRateLimiter; // Hızlanmayı yumuşatmak için
+import frc.robot.subsystems.Climber.Climber;
 import frc.robot.subsystems.Drivetrain.*;
+import frc.robot.subsystems.Intake.Intake;
+import frc.robot.subsystems.Intake.IntakeConstants;
+import frc.robot.subsystems.Loader.Loader;
+import frc.robot.subsystems.Shooter.Shooter;
 import frc.robot.controller.Driver;
 
 /**
@@ -18,11 +24,12 @@ import frc.robot.controller.Driver;
 public class Robot extends TimedRobot {
 
   private Drivetrain drivetrain;
-  private Driver driver;
+  private Intake intake;
+  private Loader loader;
+  private Shooter shooter;
+  private Climber climber;
 
-  private SlewRateLimiter xLimiter = new SlewRateLimiter(3);
-  private SlewRateLimiter yLimiter = new SlewRateLimiter(3);
-  private SlewRateLimiter rotLimiter = new SlewRateLimiter(3);
+  private Driver driver;
 
   public enum RobotState {
     IDLE,
@@ -31,15 +38,24 @@ public class Robot extends TimedRobot {
     CLIMBING
   }
 
+  private RobotState state = RobotState.IDLE;
+
+  private SlewRateLimiter xLimiter = new SlewRateLimiter(3);
+  private SlewRateLimiter yLimiter = new SlewRateLimiter(3);
+  private SlewRateLimiter rotLimiter = new SlewRateLimiter(3);
+
   /**
    * This function is run when the robot is first started up and should be used for any
    * initialization code.
    */
   public Robot() {
-    // Instantiate our RobotContainer.  This will perform all our button bindings, and put our
-    // autonomous chooser on the dashboard.
     drivetrain = Drivetrain.getInstance();
     driver = Driver.getInstance(Constants.kControllerPort);
+
+    intake = new Intake();
+    loader = new Loader();
+    shooter = new Shooter();
+    climber = new Climber();
 
     DataLogManager.start();
   }
@@ -53,7 +69,7 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void robotPeriodic() {
-    drivetrain.periodic(); // Odometri güncellemesi için şart
+    drivetrain.periodic(); // Odometry
   }
 
   /** This function is called once each time the robot enters Disabled mode. */
@@ -79,6 +95,86 @@ public class Robot extends TimedRobot {
   /** This function is called periodically during operator control. */
   @Override
   public void teleopPeriodic() {
+
+    if(driver.isEmergencyStopPressed()) {
+      state = RobotState.IDLE;
+
+      intake.disable();
+      loader.stop();
+      shooter.stop();
+      climber.stop();
+
+      SmartDashboard.putString("Robot/State", "EMERGENCY STOP");
+      return;
+    }
+
+    if(driver.isClimbPressed()) {
+      state = RobotState.CLIMBING;
+    }
+
+    switch(state) {
+
+      case IDLE:
+        intake.moveTo(IntakeConstants.stowAngle);
+        intake.roller(false);
+
+        loader.stop();
+        shooter.stop();
+        climber.stop();
+
+        if(driver.isIntakePressed()) {
+          state = RobotState.INTAKING;
+        } else if(driver.isShootPressed()) {
+          state = RobotState.SHOOTING;
+        }
+        break;
+      
+      case INTAKING:
+        intake.moveTo(IntakeConstants.intakeAngle);
+        intake.roller(true);
+
+        loader.run(driver.isManualLoaderPressed());
+
+        if(!driver.isIntakePressed() || driver.isIntakeStowPressed()) {
+          state = RobotState.IDLE;
+        }
+        break;
+
+      case SHOOTING:
+        shooter.shoot();
+
+        intake.moveTo(IntakeConstants.feedAngle);
+        intake.roller(true);
+
+        if(shooter.atSetpoint()) {
+          loader.run(true);
+        } else {
+          loader.stop();
+        }
+
+        if(driver.isManualLoaderPressed()) {
+          loader.run(true);
+        }
+
+        if(!driver.isShootPressed() || driver.isIntakeStowPressed()) {
+          state = RobotState.IDLE;
+        }
+        break;
+
+      case CLIMBING:
+        intake.disable();
+        loader.stop();
+        shooter.stop();
+
+        climber.climb();
+
+        if(!driver.isClimbPressed()) {
+          climber.stop();
+          state = RobotState.IDLE;
+        }
+        break;
+    }
+
     double xSpeed = driver.getForwardSpeed();
     double ySpeed = driver.getStrafeSpeed();
     double rot = driver.getRotationSpeed();
@@ -104,6 +200,13 @@ public class Robot extends TimedRobot {
     }
 
     drivetrain.drive(finalX, finalY, finalRot, true);
+
+    SmartDashboard.putString("Robot/State", state.name());
+    SmartDashboard.putNumber("Intake/Angle", intake.getAngle());
+    SmartDashboard.putNumber("Shooter/RPM", shooter.getRPM());
+    SmartDashboard.putBoolean("Shooter/Ready", shooter.atSetpoint());
+    SmartDashboard.putBoolean("Climber/Active", state == RobotState.CLIMBING);
+    SmartDashboard.putBoolean("Drive/SlowMode", driver.isSlowMode());
   }
 
   @Override
