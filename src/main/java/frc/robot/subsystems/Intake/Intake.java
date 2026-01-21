@@ -55,6 +55,10 @@ public class Intake extends SubsystemBase {
     pivotConfig.disableFollowerMode().inverted(false);
     pivotLeader.configure(pivotConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
+    roller.setCANTimeout(0);
+    pivotLeader.setCANTimeout(0);
+    pivotFollower.setCANTimeout(0);
+
     pivotController = pivotLeader.getClosedLoopController();
     encoder = pivotLeader.getEncoder();
 
