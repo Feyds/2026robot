@@ -3,6 +3,7 @@ package frc.robot.controller;
 import edu.wpi.first.wpilibj.PS5Controller;
 
 public class Driver {
+
     public static Driver instance;
     private final PS5Controller controller;
 
@@ -11,11 +12,13 @@ public class Driver {
     }
 
     public static Driver getInstance(int port) {
-        if(instance == null) {
+        if (instance == null) {
             instance = new Driver(port);
         }
         return instance;
     }
+
+
 
     public double getForwardSpeed() {
         return -controller.getLeftY();
@@ -29,11 +32,39 @@ public class Driver {
         return -controller.getRightX();
     }
 
-    public boolean isResetGyroButtonPressed() {
+
+    public boolean isIntakePressed() {
         return controller.getCrossButton();
     }
 
+    public boolean isShootPressed() {
+        return controller.getCircleButton();
+    }
+
+    public boolean isIntakeStowPressed() {
+        return controller.getSquareButton();
+    }
+
+    public boolean isClimbPressed() {
+        return controller.getTriangleButton();
+    }
+
+
+    public boolean isManualLoaderPressed() {
+        return controller.getR1Button();
+    }
+
+    public boolean isEmergencyStopPressed() {
+        return controller.getL1Button();
+    }
+
+
     public boolean isSlowMode() {
-        return controller.getL1ButtonPressed();
+        return controller.getL2Axis() > 0.4;
+    }
+
+
+    public boolean isResetGyroButtonPressed() {
+        return controller.getPSButton();
     }
 }
