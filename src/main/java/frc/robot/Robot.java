@@ -6,6 +6,7 @@ package frc.robot;
 
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.math.filter.SlewRateLimiter; // Hızlanmayı yumuşatmak için
 import frc.robot.subsystems.Climber.Climber;
@@ -34,6 +35,7 @@ public class Robot extends TimedRobot {
   public enum RobotState {
     IDLE,
     INTAKING,
+    LOADED,
     SHOOTING,
     CLIMBING
   }
@@ -43,6 +45,9 @@ public class Robot extends TimedRobot {
   private SlewRateLimiter xLimiter = new SlewRateLimiter(3);
   private SlewRateLimiter yLimiter = new SlewRateLimiter(3);
   private SlewRateLimiter rotLimiter = new SlewRateLimiter(3);
+
+  private Timer climbTimer = new Timer();
+  private static final double maxclimbtime = 4.0;
 
   /**
    * This function is run when the robot is first started up and should be used for any
@@ -115,6 +120,8 @@ public class Robot extends TimedRobot {
     switch(state) {
 
       case IDLE:
+        climbTimer.stop();
+        climbTimer.reset();
         intake.moveTo(IntakeConstants.stowAngle);
         intake.roller(false);
 
@@ -135,8 +142,25 @@ public class Robot extends TimedRobot {
 
         loader.run(driver.isManualLoaderPressed());
 
-        if(!driver.isIntakePressed() || driver.isIntakeStowPressed()) {
-          state = RobotState.IDLE;
+        if(driver.isIntakeStowPressed()) {
+          intake.roller(false);
+          state = RobotState.LOADED;
+        }
+        break;
+
+      case LOADED:
+        intake.moveTo(IntakeConstants.stowAngle);
+        intake.roller(false);
+
+        loader.stop();
+        shooter.stop();
+
+        if(driver.isShootPressed()) {
+          state = RobotState.SHOOTING;
+        }
+
+        if(driver.isIntakePressed()) {
+          state = RobotState.INTAKING;
         }
         break;
 
@@ -156,7 +180,9 @@ public class Robot extends TimedRobot {
           loader.run(true);
         }
 
-        if(!driver.isShootPressed() || driver.isIntakeStowPressed()) {
+        if(!driver.isShootPressed()) {
+          loader.stop();
+          shooter.stop();
           state = RobotState.IDLE;
         }
         break;
@@ -166,7 +192,18 @@ public class Robot extends TimedRobot {
         loader.stop();
         shooter.stop();
 
+        if(!climbTimer.isRunning()) {
+          climbTimer.reset();
+          climbTimer.start();
+        }
+
         climber.climb();
+
+        if(climbTimer.hasElapsed(maxclimbtime)) {
+          climber.stop();
+          climbTimer.stop();
+          state = RobotState.IDLE;
+        }
 
         if(!driver.isClimbPressed()) {
           climber.stop();
@@ -204,6 +241,7 @@ public class Robot extends TimedRobot {
     SmartDashboard.putString("Robot/State", state.name());
     SmartDashboard.putNumber("Intake/Angle", intake.getAngle());
     SmartDashboard.putNumber("Shooter/RPM", shooter.getRPM());
+    SmartDashboard.putNumber("Climber/Time", climbTimer.get());
     SmartDashboard.putBoolean("Shooter/Ready", shooter.atSetpoint());
     SmartDashboard.putBoolean("Climber/Active", state == RobotState.CLIMBING);
     SmartDashboard.putBoolean("Drive/SlowMode", driver.isSlowMode());
