@@ -9,4 +9,12 @@ public final class ShooterConstants {
     public static final double kP = 0.00025;
     public static final double kI = 0.0;
     public static final double kD = 0.0;
+
+    public static final double kDistanceToRPM = 800.0;
+    public static final double kRPMIntercept = 1600.0;
+
+    public static final double MIN_RPM = 2500;
+    public static final double MAX_RPM = 5500;
+
+    public static final double RPM_TOLERANCE = 75;
 }

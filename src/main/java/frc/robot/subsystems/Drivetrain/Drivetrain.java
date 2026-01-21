@@ -31,7 +31,7 @@ public class Drivetrain {
         return instance;
     }
 
-    public Drivetrain() {
+    private Drivetrain() {
         frontLeft = new SwerveModule("FrontLeft", SwerveConstants.FL_DRIVE_ID, SwerveConstants.FL_ANGLE_ID, SwerveConstants.FL_CANCODER_ID, SwerveConstants.FL_OFFSET);
         frontRight = new SwerveModule("FrontRight", SwerveConstants.FR_DRIVE_ID, SwerveConstants.FR_ANGLE_ID, SwerveConstants.FR_CANCODER_ID, SwerveConstants.FR_OFFSET);
         backLeft = new SwerveModule("BackLeft", SwerveConstants.BL_DRIVE_ID, SwerveConstants.BL_ANGLE_ID, SwerveConstants.BL_CANCODER_ID, SwerveConstants.BL_OFFSET);

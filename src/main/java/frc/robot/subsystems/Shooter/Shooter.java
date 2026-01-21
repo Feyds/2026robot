@@ -21,8 +21,18 @@ public class Shooter extends SubsystemBase {
   SparkClosedLoopController controller;
   RelativeEncoder encoder;
 
+  private double targetRPM = 0.0;
+
+  public static Shooter instance;
+  public static Shooter getInstance() {
+    if(instance == null) {
+      instance = new Shooter();
+    }
+    return instance;
+  }
+
   /** Creates a new Shooter. */
-  public Shooter() {
+  private Shooter() {
     motor = new SparkFlex(ShooterConstants.kRollerPort, MotorType.kBrushless);
 
     motor.setCANTimeout(250);
@@ -41,18 +51,31 @@ public class Shooter extends SubsystemBase {
   }
 
   public void shoot() {
-    controller.setSetpoint(ShooterConstants.targetRPM, ControlType.kVelocity);
+    controller.setSetpoint(targetRPM, ControlType.kVelocity);
   }
 
   public boolean atSetpoint() {
-    return Math.abs(encoder.getVelocity() - ShooterConstants.targetRPM) < ShooterConstants.rpmtolerance;
+    return Math.abs(getRPM() - targetRPM) < ShooterConstants.rpmtolerance;
   }
 
   public double getRPM() {
     return encoder.getVelocity();
   }
 
+  public void setTargetRPMFromDistance(double distanceMeters) {
+    double rpm = ShooterConstants.kDistanceToRPM * distanceMeters + ShooterConstants.kRPMIntercept;
+
+    rpm = Math.max(ShooterConstants.MIN_RPM, Math.min(rpm, ShooterConstants.MAX_RPM));
+
+    targetRPM = rpm;
+  }
+
+  public double getTargetRPM() {
+    return targetRPM;
+  }
+
   public void stop() {
+    targetRPM = 0;
     motor.stopMotor();
   }
 

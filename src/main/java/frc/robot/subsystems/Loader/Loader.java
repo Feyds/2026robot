@@ -12,9 +12,17 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 public class Loader extends SubsystemBase {
 
   SparkFlex motor;
+  public static Loader instance;
+
+  public static Loader getInstance() {
+    if(instance == null) {
+      instance = new Loader();
+    }
+    return instance;
+  }
 
   /** Creates a new Loader. */
-  public Loader() {
+  private Loader() {
     motor = new SparkFlex(LoaderConstants.kMotorPort, MotorType.kBrushless);
   }
 

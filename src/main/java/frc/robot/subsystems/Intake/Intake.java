@@ -32,7 +32,7 @@ public class Intake extends SubsystemBase {
   }
 
   /** Creates a new IntakeSubsystem. */
-  public Intake() {
+  private Intake() {
     roller = new SparkMax(IntakeConstants.kRollerPort, MotorType.kBrushless);
     pivotLeader = new SparkMax(IntakeConstants.kPivotLeadPort, MotorType.kBrushless);
     pivotFollower = new SparkMax(IntakeConstants.kPivotFollowerPort, MotorType.kBrushless);

@@ -15,6 +15,7 @@ import frc.robot.subsystems.Intake.Intake;
 import frc.robot.subsystems.Intake.IntakeConstants;
 import frc.robot.subsystems.Loader.Loader;
 import frc.robot.subsystems.Shooter.Shooter;
+import frc.robot.subsystems.Vision.Limelight;
 import frc.robot.controller.Driver;
 
 /**
@@ -31,16 +32,19 @@ public class Robot extends TimedRobot {
   private Climber climber;
 
   private Driver driver;
+  private Limelight limelight;
 
   public enum RobotState {
     IDLE,
     INTAKING,
     LOADED,
+    AUTO_ALIGN,
     SHOOTING,
     CLIMBING
   }
 
   private RobotState state = RobotState.IDLE;
+  private RobotState previousState = RobotState.IDLE;
 
   private SlewRateLimiter xLimiter = new SlewRateLimiter(3);
   private SlewRateLimiter yLimiter = new SlewRateLimiter(3);
@@ -49,6 +53,8 @@ public class Robot extends TimedRobot {
   private Timer climbTimer = new Timer();
   private static final double maxclimbtime = 4.0;
 
+  private boolean emergencyStop = false;
+
   /**
    * This function is run when the robot is first started up and should be used for any
    * initialization code.
@@ -56,11 +62,12 @@ public class Robot extends TimedRobot {
   public Robot() {
     drivetrain = Drivetrain.getInstance();
     driver = Driver.getInstance(Constants.kControllerPort);
+    limelight = Limelight.getInstance();
 
-    intake = new Intake();
-    loader = new Loader();
-    shooter = new Shooter();
-    climber = new Climber();
+    intake = Intake.getInstance();
+    loader = Loader.getInstance();
+    shooter = Shooter.getInstance();
+    climber = Climber.getInstance();
 
     DataLogManager.start();
   }
@@ -81,6 +88,7 @@ public class Robot extends TimedRobot {
   @Override
   public void disabledInit() {
     drivetrain.stopModules();
+    emergencyStop = false;
   }
 
   @Override
@@ -95,96 +103,113 @@ public class Robot extends TimedRobot {
   public void autonomousPeriodic() {}
 
   @Override
-  public void teleopInit() {}
+  public void teleopInit() {
+    climbTimer.stop();
+    climbTimer.reset();
+    emergencyStop = false;
+    state = RobotState.IDLE;
+  }
 
   /** This function is called periodically during operator control. */
   @Override
   public void teleopPeriodic() {
 
-    if(driver.isEmergencyStopPressed()) {
-      state = RobotState.IDLE;
+    if (driver.isEmergencyStopPressed()) {
+      emergencyStop = true;
+    }
 
+    if (emergencyStop) {
+      drivetrain.stopModules();
       intake.disable();
       loader.stop();
       shooter.stop();
       climber.stop();
-
-      SmartDashboard.putString("Robot/State", "EMERGENCY STOP");
+      SmartDashboard.putString("Robot/State", "EMERGENCY_STOP");
       return;
     }
 
-    if(driver.isClimbPressed()) {
+    double x = Math.abs(driver.getForwardSpeed()) > 0.1 ? driver.getForwardSpeed() : 0;
+    double y = Math.abs(driver.getStrafeSpeed()) > 0.1 ? driver.getStrafeSpeed() : 0;
+    double rot = Math.abs(driver.getRotationSpeed()) > 0.1 ? driver.getRotationSpeed() : 0;
+
+    double maxSpeed = SwerveConstants.MAX_SPEED_METERS_PER_SECOND;
+    double maxRot = SwerveConstants.MAX_ANGULAR_SPEED_RADIANS_PER_SECOND;
+
+    if (driver.isSlowMode()) {
+      maxSpeed *= 0.5;
+      maxRot *= 0.5;
+    }
+
+    double finalX = xLimiter.calculate(x) * maxSpeed;
+    double finalY = yLimiter.calculate(y) * maxSpeed;
+    double finalRot = rotLimiter.calculate(rot) * maxRot;
+
+    if (driver.isResetGyroButtonPressed()) {
+      drivetrain.resetGyro();
+    }
+
+    if (state != RobotState.AUTO_ALIGN) {
+      drivetrain.drive(finalX, finalY, finalRot, true);
+    }
+
+    if (driver.isClimbPressed()) {
       state = RobotState.CLIMBING;
     }
 
-    switch(state) {
+    switch (state) {
 
       case IDLE:
-        climbTimer.stop();
-        climbTimer.reset();
         intake.moveTo(IntakeConstants.stowAngle);
         intake.roller(false);
-
         loader.stop();
         shooter.stop();
         climber.stop();
 
-        if(driver.isIntakePressed()) {
-          state = RobotState.INTAKING;
-        } else if(driver.isShootPressed()) {
-          state = RobotState.SHOOTING;
-        }
+        if (driver.isIntakePressed()) state = RobotState.INTAKING;
+        else if (driver.isShootPressed()) state = RobotState.SHOOTING;
+        else if (driver.isAutoAlignHeld() && state != RobotState.CLIMBING) enterAutoAlign();
         break;
-      
+
       case INTAKING:
         intake.moveTo(IntakeConstants.intakeAngle);
         intake.roller(true);
-
         loader.run(driver.isManualLoaderPressed());
 
-        if(driver.isIntakeStowPressed()) {
-          intake.roller(false);
-          state = RobotState.LOADED;
-        }
+        if (driver.isIntakeStowPressed()) state = RobotState.LOADED;
+        else if (driver.isAutoAlignHeld() && state != RobotState.CLIMBING) enterAutoAlign();
         break;
 
       case LOADED:
         intake.moveTo(IntakeConstants.stowAngle);
         intake.roller(false);
-
         loader.stop();
         shooter.stop();
 
-        if(driver.isShootPressed()) {
-          state = RobotState.SHOOTING;
-        }
-
-        if(driver.isIntakePressed()) {
-          state = RobotState.INTAKING;
-        }
+        if (driver.isShootPressed()) state = RobotState.SHOOTING;
+        else if (driver.isIntakePressed()) state = RobotState.INTAKING;
+        else if (driver.isAutoAlignHeld() && state != RobotState.CLIMBING) enterAutoAlign();
         break;
 
       case SHOOTING:
-        shooter.shoot();
+        if (limelight.hasTarget()) {
+          shooter.setTargetRPMFromDistance(limelight.getDistanceMeters());
+        }
 
+        shooter.shoot();
         intake.moveTo(IntakeConstants.feedAngle);
         intake.roller(true);
 
-        if(shooter.atSetpoint()) {
+        if (shooter.atSetpoint() || driver.isManualLoaderPressed()) {
           loader.run(true);
         } else {
           loader.stop();
         }
 
-        if(driver.isManualLoaderPressed()) {
-          loader.run(true);
-        }
-
-        if(!driver.isShootPressed()) {
+        if (!driver.isShootPressed()) {
           loader.stop();
           shooter.stop();
           state = RobotState.IDLE;
-        }
+        } else if (driver.isAutoAlignHeld() && state != RobotState.CLIMBING) enterAutoAlign();
         break;
 
       case CLIMBING:
@@ -192,51 +217,34 @@ public class Robot extends TimedRobot {
         loader.stop();
         shooter.stop();
 
-        if(!climbTimer.isRunning()) {
+        if (!climbTimer.isRunning()) {
           climbTimer.reset();
           climbTimer.start();
         }
 
         climber.climb();
 
-        if(climbTimer.hasElapsed(maxclimbtime)) {
+        if (climbTimer.hasElapsed(maxclimbtime) || !driver.isClimbPressed()) {
           climber.stop();
           climbTimer.stop();
           state = RobotState.IDLE;
         }
+        break;
 
-        if(!driver.isClimbPressed()) {
-          climber.stop();
-          state = RobotState.IDLE;
+      case AUTO_ALIGN:
+        double visionRot = 0;
+
+        if (limelight.hasTarget()) {
+          visionRot = Math.max(Math.min(limelight.getTx() * 0.02, 2.0), -2.0);
+        }
+
+        drivetrain.drive(finalX * 0.3, finalY * 0.3, visionRot, true);
+
+        if (!driver.isAutoAlignHeld()) {
+          state = previousState;
         }
         break;
     }
-
-    double xSpeed = driver.getForwardSpeed();
-    double ySpeed = driver.getStrafeSpeed();
-    double rot = driver.getRotationSpeed();
-
-    xSpeed = Math.abs(xSpeed) > 0.1 ? xSpeed : 0.0;
-    ySpeed = Math.abs(ySpeed) > 0.1 ? ySpeed : 0.0;
-    rot = Math.abs(rot) > 0.1 ? rot : 0.0;
-
-    double maxSpeed = SwerveConstants.MAX_SPEED_METERS_PER_SECOND;
-    double maxRot = SwerveConstants.MAX_ANGULAR_SPEED_RADIANS_PER_SECOND;
-    
-    if (driver.isSlowMode()) {
-        maxSpeed /= 2;
-        maxRot /= 2;
-    }
-
-    double finalX = xLimiter.calculate(xSpeed) * maxSpeed;
-    double finalY = yLimiter.calculate(ySpeed) * maxSpeed;
-    double finalRot = rotLimiter.calculate(rot) * maxRot;
-
-    if (driver.isResetGyroButtonPressed()) {
-        drivetrain.resetGyro();
-    }
-
-    drivetrain.drive(finalX, finalY, finalRot, true);
 
     SmartDashboard.putString("Robot/State", state.name());
     SmartDashboard.putNumber("Intake/Angle", intake.getAngle());
@@ -245,7 +253,18 @@ public class Robot extends TimedRobot {
     SmartDashboard.putBoolean("Shooter/Ready", shooter.atSetpoint());
     SmartDashboard.putBoolean("Climber/Active", state == RobotState.CLIMBING);
     SmartDashboard.putBoolean("Drive/SlowMode", driver.isSlowMode());
+    SmartDashboard.putBoolean("Vision/HasTarget", limelight.hasTarget());
+    SmartDashboard.putNumber("Vision/Tx", limelight.getTx());
+    SmartDashboard.putNumber("Vision/Distance", limelight.getDistanceMeters());
+    SmartDashboard.putBoolean("Vision/Aligned", limelight.isAligned());
+    SmartDashboard.putNumber("Shooter/TargetRPM", shooter.getTargetRPM());
   }
+
+  private void enterAutoAlign() {
+    previousState = state;
+    state = RobotState.AUTO_ALIGN;
+  }
+
 
   @Override
   public void testInit() {}

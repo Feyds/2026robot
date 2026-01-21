@@ -12,9 +12,17 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 public class Climber extends SubsystemBase {
 
   SparkMax motor;
+  public static Climber instance;
+
+  public static Climber getInstance() {
+    if(instance == null) {
+      instance = new Climber();
+    }
+    return instance;
+  }
 
   /** Creates a new Climber. */
-  public Climber() {
+  private Climber() {
     motor = new SparkMax(ClimberConstants.kMotorPort, MotorType.kBrushless);
   }
 
